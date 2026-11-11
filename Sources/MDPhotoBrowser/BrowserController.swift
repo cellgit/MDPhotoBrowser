@@ -23,6 +23,8 @@ final class BrowserController: Identifiable {
         var image: UIImage
         var frame: CGRect
         var cornerRadius: CGFloat
+        /// 图比框大时露哪一部分：照着缩略图的裁法，缩略图那一头和格子一模一样。
+        var alignment: Alignment = .center
         var opacity: Double = 1
     }
 
@@ -44,6 +46,7 @@ final class BrowserController: Identifiable {
     struct SourceInfo {
         var frame: CGRect
         var cornerRadius: CGFloat
+        var alignment: Alignment = .center
     }
 
     let id = UUID()
@@ -141,7 +144,7 @@ final class BrowserController: Identifiable {
            ZoomGeometry.isVisible(source.frame, in: screen) {
             let target = ZoomGeometry.fittedFrame(image: image.size, in: screen, padding: configuration.paddingValue,
                                                   fitsLongPhotosToWidth: configuration.fitsLongPhotosToWidth)
-            flight = Flight(image: image, frame: source.frame, cornerRadius: source.cornerRadius)
+            flight = Flight(image: image, frame: source.frame, cornerRadius: source.cornerRadius, alignment: source.alignment)
             currentImage = image
             // 飞着的图先在缩略图的位置上画一帧，下一轮再藏缩略图、开始飞。缩略图和浏览器是两层，不在同一帧更新：
             // 同一轮藏的话，缩略图会先空一帧。
@@ -189,7 +192,8 @@ final class BrowserController: Identifiable {
             } completion: { [self] in finish() }
             return
         }
-        flight = Flight(image: visible.image, frame: visible.frame, cornerRadius: visible.cornerRadius)
+        flight = Flight(image: visible.image, frame: visible.frame, cornerRadius: visible.cornerRadius,
+                        alignment: source?.alignment ?? .center)
         pagerOpacity = 0
         if let photo { handlers.hideSource?(photo.id) }
         DispatchQueue.main.async { [self] in

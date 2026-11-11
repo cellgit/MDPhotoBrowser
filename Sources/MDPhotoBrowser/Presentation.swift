@@ -61,9 +61,14 @@ public extension View {
     }
 
     /// 这块缩略图就是浏览器里 `id` 那张照片：打开时照片从这里放大出来，关上时缩回这里，浏览这张时这里空着。
-    /// 要挂在 `.mdPhotoBrowser` 那个视图的里面。`cornerRadius` 是缩略图的圆角，转场时照片的圆角从它变到 0。
-    func mdPhotoSource(_ id: MDPhoto.ID, cornerRadius: CGFloat = 0) -> some View {
-        modifier(PhotoSourceModifier(id: id, cornerRadius: cornerRadius))
+    /// 要挂在 `.mdPhotoBrowser` 那个视图的里面。
+    ///
+    /// - Parameters:
+    ///   - cornerRadius: 缩略图的圆角，转场时照片的圆角从它变到 0。
+    ///   - alignment: 缩略图铺满裁好时留的是哪一部分（比如封面取上部就是 `.top`），转场的缩略图那一头照着裁，
+    ///     第一帧和缩略图一模一样。
+    func mdPhotoSource(_ id: MDPhoto.ID, cornerRadius: CGFloat = 0, alignment: Alignment = .center) -> some View {
+        modifier(PhotoSourceModifier(id: id, cornerRadius: cornerRadius, alignment: alignment))
     }
 }
 
@@ -155,12 +160,11 @@ final class PhotoSourceRegistry {
     private struct Source {
         /// 哪个视图报的：同一个 id 有两个缩略图时，先消失的那个不把后来的那个删掉。
         var token: UUID
-        var frame: CGRect
-        var cornerRadius: CGFloat
+        var info: BrowserController.SourceInfo
     }
 
-    func update(_ id: MDPhoto.ID, token: UUID, frame: CGRect, cornerRadius: CGFloat) {
-        sources[id] = Source(token: token, frame: frame, cornerRadius: cornerRadius)
+    func update(_ id: MDPhoto.ID, token: UUID, info: BrowserController.SourceInfo) {
+        sources[id] = Source(token: token, info: info)
     }
 
     func move(from old: MDPhoto.ID, to new: MDPhoto.ID, token: UUID) {
@@ -174,7 +178,7 @@ final class PhotoSourceRegistry {
     }
 
     func source(for id: MDPhoto.ID) -> BrowserController.SourceInfo? {
-        sources[id].map { BrowserController.SourceInfo(frame: $0.frame, cornerRadius: $0.cornerRadius) }
+        sources[id]?.info
     }
 
     func hide(_ id: MDPhoto.ID?) {
@@ -185,6 +189,7 @@ final class PhotoSourceRegistry {
 private struct PhotoSourceModifier: ViewModifier {
     let id: MDPhoto.ID
     let cornerRadius: CGFloat
+    let alignment: Alignment
     @Environment(PhotoSourceRegistry.self) private var registry: PhotoSourceRegistry?
     @State private var token = UUID()
 
@@ -194,7 +199,7 @@ private struct PhotoSourceModifier: ViewModifier {
             .onGeometryChange(for: CGRect.self) { proxy in
                 proxy.frame(in: .global)
             } action: { frame in
-                registry?.update(id, token: token, frame: frame, cornerRadius: cornerRadius)
+                registry?.update(id, token: token, info: .init(frame: frame, cornerRadius: cornerRadius, alignment: alignment))
             }
             .onChange(of: id) { old, new in registry?.move(from: old, to: new, token: token) }
             .onDisappear { registry?.remove(id, token: token) }

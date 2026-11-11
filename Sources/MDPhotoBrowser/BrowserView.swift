@@ -101,7 +101,7 @@ private struct FlightLayer: View {
                 Image(uiImage: flight.image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: max(flight.frame.width, 1), height: max(flight.frame.height, 1))
+                    .frame(width: max(flight.frame.width, 1), height: max(flight.frame.height, 1), alignment: flight.alignment)
                     .clipShape(RoundedRectangle(cornerRadius: flight.cornerRadius, style: .continuous))
                     .position(x: flight.frame.midX - origin.x, y: flight.frame.midY - origin.y)
                     .opacity(flight.opacity)

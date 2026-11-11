@@ -66,7 +66,11 @@ struct Gallery: View {
   按位置开用 `.mdPhotoBrowser(index: $index, photos:)`。
 - `.mdPhotoSource` 要挂在 `.mdPhotoBrowser` 那个视图的里面。没挂、或者缩略图不在屏幕上，照片原地淡入淡出。
   浏览哪张，哪张的缩略图就空着，往下拖时看得到照片是从哪儿来的。
-- 缩略图铺满裁好（`scaledToFill`）的话，给它加 `.contentShape(…)`：裁掉的部分还占着地方，会接走旁边格子的点按。
+- **缩略图要从和原图同比例的图裁出来**（同一张图 `scaledToFill` 铺满裁好），并且让浏览器拿得到这张图（`placeholder`
+  或 `source` 的 `cached`）：点下去时照片立刻从格子里飞出来，第一帧和格子一模一样。服务端裁好的方图（比如按脸裁的）
+  比例对不上，做不了转场的起点；手上没有同比例的图时浏览器先等垫着的那张最多 0.25 秒，等不到就原地淡入。
+- 缩略图取的不是正中（比如封面取上部），传 `alignment`：`.mdPhotoSource(id, alignment: .top)`。
+- 缩略图铺满裁好的话，给它加 `.contentShape(…)`：裁掉的部分还占着地方，会接走旁边格子的点按。
 - `photos` 打开着时可以变（删了、加了、改了说明），浏览器停在原来那张上，它没了就停在原来的位置。
 - `onDelete: { photo in … return true }`：返回 true 才从浏览器里拿掉，删到一张不剩就关。
   `onDismiss: { photo in … }`：关的动画走完、浏览器已经拿掉之后调，这时可以接着弹别的页面。
