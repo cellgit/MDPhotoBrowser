@@ -67,6 +67,7 @@ final class BrowserController: Identifiable {
     @ObservationIgnored weak var pager: PagerView?
     @ObservationIgnored var containerSize: CGSize = .zero
     @ObservationIgnored private var autoHideTask: Task<Void, Never>?
+    @ObservationIgnored private var openTask: Task<Void, Never>?
 
     init(photos: [MDPhoto], index: Int, configuration: MDPhotoBrowserConfiguration) {
         self.photos = photos
@@ -102,20 +103,50 @@ final class BrowserController: Identifiable {
     }
 
     /// 界面第一次出现：有缩略图、手上有图，就从缩略图里放大出来；否则整个淡入。
+    ///
+    /// 手上没有能马上画的图时（内存里只有裁成方块的缩略图），先等垫着的那张最多 `firstImageWait`：
+    /// 从磁盘解一张小图只要几十毫秒，等到了照样从缩略图里飞出来，等不到才原地淡入。等的时候界面是透明的。
     func open(in size: CGSize) {
         containerSize = size
-        guard phase == .opening, let photo = currentPhoto else { return }
-        handlers.hideSource?(photo.id)
-        let screen = CGRect(origin: .zero, size: size)
-        if let image = immediateImage(for: photo),
+        guard phase == .opening, openTask == nil, let photo = currentPhoto else { return }
+        if let image = immediateImage(for: photo) {
+            start(photo, image: image)
+            return
+        }
+        let loader = configuration.loader
+        let source = photo.placeholder ?? photo.source
+        openTask = Task { [weak self] in
+            let image = await withTaskGroup(of: UIImage?.self) { group in
+                group.addTask { try? await loader.image(for: source) }
+                group.addTask {
+                    try? await Task.sleep(for: Self.firstImageWait)
+                    return nil
+                }
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                return first
+            }
+            guard let self, phase == .opening else { return }
+            start(photo, image: image)
+        }
+    }
+
+    /// 打开时最多等垫着的那张多久。
+    nonisolated static let firstImageWait: Duration = .milliseconds(250)
+
+    private func start(_ photo: MDPhoto, image: UIImage?) {
+        let screen = CGRect(origin: .zero, size: containerSize)
+        if let image,
            let source = handlers.sourceProvider?(photo.id),
            ZoomGeometry.isVisible(source.frame, in: screen) {
             let target = ZoomGeometry.fittedFrame(image: image.size, in: screen, padding: configuration.paddingValue,
                                                   fitsLongPhotosToWidth: configuration.fitsLongPhotosToWidth)
             flight = Flight(image: image, frame: source.frame, cornerRadius: source.cornerRadius)
             currentImage = image
-            // 先让缩略图位置上的第一帧画出来，下一轮再飞。
+            // 飞着的图先在缩略图的位置上画一帧，下一轮再藏缩略图、开始飞。缩略图和浏览器是两层，不在同一帧更新：
+            // 同一轮藏的话，缩略图会先空一帧。
             DispatchQueue.main.async { [self] in
+                handlers.hideSource?(photo.id)
                 withAnimation(openAnimation) {
                     flight?.frame = target
                     flight?.cornerRadius = 0
@@ -128,6 +159,7 @@ final class BrowserController: Identifiable {
                 }
             }
         } else {
+            handlers.hideSource?(photo.id)
             pagerScale = 0.92
             withAnimation(.smooth(duration: 0.26)) {
                 backgroundOpacity = 1
@@ -143,6 +175,7 @@ final class BrowserController: Identifiable {
     /// 关掉：照片缩回它的缩略图（在屏幕上的话），否则原地缩小淡出。
     func close() {
         guard phase != .closing, phase != .closed else { return }
+        openTask?.cancel()
         let photo = currentPhoto
         handlers.onWillDismiss?(photo)
         phase = .closing
@@ -174,11 +207,15 @@ final class BrowserController: Identifiable {
         }
     }
 
+    /// 缩略图先露出来（飞着的图正好盖在它上面），下一轮再拿掉飞着的图和浏览器：同一轮拿掉的话，两层不在同一帧更新，
+    /// 缩略图会空一帧。
     private func finish() {
         handlers.hideSource?(nil)
-        flight = nil
-        phase = .closed
-        handlers.onFinish?(currentPhoto)
+        DispatchQueue.main.async { [self] in
+            flight = nil
+            phase = .closed
+            handlers.onFinish?(currentPhoto)
+        }
     }
 
     /* ---------- 往下拖 ---------- */
